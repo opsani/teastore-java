@@ -1,0 +1,7 @@
+- op: replace
+  path: "/spec/ports"
+  value:
+  - name: http
+    port: 3306
+    protocol: TCP
+    targetPort: 3306

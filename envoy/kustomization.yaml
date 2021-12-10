@@ -1,0 +1,19 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+patches:
+- path: envoy-patch.yaml
+  target:
+    group: apps
+    kind: Deployment
+    name: teastore-webui
+    version: v1
+
+- path: frontend-service-port-patch.yaml
+  target:
+    kind: Service
+    name: teastore-webui
+    version: v1
+bases:
+- ./../base

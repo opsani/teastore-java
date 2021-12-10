@@ -1,0 +1,368 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: servo-teastore-java
+  labels:
+    app.kubernetes.io/name: servo
+    app.kubernetes.io/component: core
+    servo.opsani.com/optimizer: kumul.us_teastore-java
+  annotations:
+    servo.opsani.com/optimizer: kumul.us/teastore-java
+data:
+  optimizer: kumul.us/teastore-java
+  log_level: INFO
+  servo.yaml: |
+    opsani_dev:
+      namespace: teastore
+      deployment: teastore-webui
+      container: teastore-webui
+      service: teastore-webui
+
+      envoy_sidecar_image: opsani/envoy-proxy:v1.20.0
+      cpu:
+        min: 250m
+        max: '3.0'
+      memory:
+        min: 128.0MiB
+        max: 3.0GiB
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servo-teastore-java
+  labels:
+    app.kubernetes.io/name: servo
+    app.kubernetes.io/component: core
+    servo.opsani.com/optimizer: kumul.us_teastore-java
+  annotations:
+    servo.opsani.com/optimizer: kumul.us/teastore-java
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: servo
+  template:
+    metadata:
+      name: servo-teastore-java
+      labels:
+        app.kubernetes.io/name: servo
+        app.kubernetes.io/component: core
+        servo.opsani.com/optimizer: kumul.us_teastore-java
+      annotations:
+        servo.opsani.com/optimizer: kumul.us/teastore-java
+    spec:
+      serviceAccountName: servo-teastore-java
+      containers:
+      - name: servo
+        image: opsani/servox:v0.11.0
+        terminationMessagePolicy: FallbackToLogsOnError
+        args:
+          - 'check'
+          - '--wait=30m'
+          - '--delay=10s'
+          - '--progressive'
+          - '--remedy'
+          - '--run'
+        env:
+        - name: OPSANI_OPTIMIZER
+          valueFrom:
+            configMapKeyRef:
+              name: servo-teastore-java
+              key: optimizer
+        - name: OPSANI_TOKEN_FILE
+          value: /servo/opsani.token
+        - name: SERVO_LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: servo-teastore-java
+              key: log_level
+        - name: POD_NAME
+          valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+        volumeMounts:
+        - name: servo-token-volume
+          mountPath: /servo/opsani.token
+          subPath: opsani.token
+          readOnly: true
+        - name: servo-config-volume
+          mountPath: /servo/servo.yaml
+          subPath: servo.yaml
+          readOnly: true
+        resources:
+          limits:
+            cpu: 250m
+            memory: 512Mi
+      - name: prometheus
+        image: quay.io/prometheus/prometheus:v2.20.1
+        args:
+          - '--storage.tsdb.retention.time=12h'
+          - '--config.file=/etc/prometheus/prometheus.yaml'
+        ports:
+        - name: webui
+          containerPort: 9090
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128M
+          limits:
+            cpu: 500m
+            memory: 1G
+        volumeMounts:
+        - name: prometheus-config-volume
+          mountPath: /etc/prometheus
+      volumes:
+      - name: servo-token-volume
+        secret:
+          secretName: servo-teastore-java
+          items:
+          - key: token
+            path: opsani.token
+      - name: servo-config-volume
+        configMap:
+          name: servo-teastore-java
+          items:
+          - key: servo.yaml
+            path: servo.yaml
+      - name: prometheus-config-volume
+        configMap:
+          name: servo.prometheus-teastore-java
+
+      # Prefer deployment onto a Node labeled role=servo
+      # This ensures physical isolation and network transport if possible
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            preference:
+              matchExpressions:
+              - key: node.opsani.com/role
+                operator: In
+                values:
+                - servo
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: servo-teastore-java
+  labels:
+    app.kubernetes.io/name: servo
+    app.kubernetes.io/component: core
+    servo.opsani.com/optimizer: kumul.us_teastore-java
+  annotations:
+    servo.opsani.com/optimizer: kumul.us/teastore-java
+type: Opaque
+stringData:
+  token: d6f92c29-b8ba-442c-abe5-76e3e223fe02
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: servo-teastore-java
+  labels:
+    app.kubernetes.io/name: servo
+    app.kubernetes.io/component: core
+    servo.opsani.com/optimizer: kumul.us_teastore-java
+  annotations:
+    servo.opsani.com/optimizer: kumul.us/teastore-java
+---
+# Role for the servo itself
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: servo-teastore-java
+  labels:
+    app.kubernetes.io/name: servo
+    app.kubernetes.io/component: core
+    servo.opsani.com/optimizer: kumul.us_teastore-java
+  annotations:
+    servo.opsani.com/optimizer: kumul.us/teastore-java
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get"]
+- apiGroups: ["apps", "extensions"]
+  resources: ["deployments", "deployments/status", "replicasets"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: [""]
+  resources: ["pods", "pods/logs", "pods/status", "pods/exec", "pods/portforward", "services"]
+  verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]
+
+---
+# Role for the Prometheus sidecar
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: servo.prometheus-teastore-java
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/part-of: servo
+    servo.opsani.com/optimizer: kumul.us_teastore-java
+  annotations:
+    servo.opsani.com/optimizer: kumul.us/teastore-java
+rules:
+- apiGroups: [""]
+  resources:
+  - services
+  - endpoints
+  - pods
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources:
+  - configmaps
+  verbs: ["get"]
+
+---
+# Bind the Servo Role to the servo Service Account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: servo-teastore-java
+  labels:
+    app.kubernetes.io/name: servo
+    app.kubernetes.io/component: core
+    servo.opsani.com/optimizer: kumul.us_teastore-java
+  annotations:
+    servo.opsani.com/optimizer: kumul.us/teastore-java
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: servo-teastore-java
+subjects:
+- kind: ServiceAccount
+  name: servo-teastore-java
+
+---
+# Bind the Prometheus Role to the servo Service Account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: servo.prometheus-teastore-java
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/part-of: servo
+    servo.opsani.com/optimizer: kumul.us_teastore-java
+  annotations:
+    servo.opsani.com/optimizer: kumul.us/teastore-java
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: servo.prometheus-teastore-java
+subjects:
+- kind: ServiceAccount
+  name: servo-teastore-java
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: servo.prometheus-teastore-java
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/part-of: servo
+    servo.opsani.com/optimizer: kumul.us_teastore-java
+  annotations:
+    servo.opsani.com/optimizer: kumul.us/teastore-java
+data:
+  prometheus.yaml: |
+    # Opsani Servo Prometheus Sidecar v0.8.0
+    # This configuration allows the Opsani Servo to discover and scrape Pods that
+    # have been injected with an Envoy proxy sidecar container that emits the metrics
+    # necessary for optimization. Scraping by the Prometheus sidecar is enabled by
+    # adding the following annotations to the Pod spec of the Deployment under
+    # optimization:
+    #
+    # annotations:
+    #   prometheus.opsani.com/scrape: "true" # Opt-in for scraping by the servo
+    #   prometheus.opsani.com/scheme: http # Scrape via HTTP by default
+    #   prometheus.opsani.com/path: /stats/prometheus # Default Envoy metrics path
+    #   prometheus.opsani.com/port: "9901" # Default Envoy metrics port
+    #
+    # Path and port collisions with the optimization target can be resolved be changing
+    # the relevant annotation.
+
+    # Scrape the targets every 5 seconds.
+    # Since we are only looking at specifically annotated Envoy sidecar containers
+    # with a known metrics surface area and retain the values for <= 24 hours, we
+    # can scrape aggressively. The higher scrape resolution is helpful for testing
+    # and running checks that verify configuration health.
+    global:
+      scrape_interval: 5s
+      scrape_timeout: 5s
+      evaluation_interval: 5s
+
+    # Scrape the Envoy sidecar metrics based on matching annotations (see above)
+    scrape_configs:
+    - job_name: 'opsani-envoy-sidecars'
+
+
+      # Configure access to Kubernetes API server
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+      kubernetes_sd_configs:
+        - role: pod
+          namespaces:
+            names:
+            - teastore
+
+      relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: kubernetes_pod_name
+
+        # Do not attempt to scrape init containers
+        - source_labels: [__meta_kubernetes_pod_container_init]
+          action: drop
+          regex: true
+
+        # Only scrape Pods labeled with our optimizer
+        - source_labels: [__meta_kubernetes_pod_label_servo_opsani_com_optimizer]
+          action: keep
+          regex: kumul\.us_teastore-java
+
+        # Relabel to scrape only pods that have
+        # "prometheus.opsani.com/scrape = true" annotation.
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_scrape]
+          action: keep
+          regex: true
+
+        # Relabel to configure scrape scheme for pod scrape targets
+        # based on pod "prometheus.opsani.com/scheme = <scheme>" annotation.
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_scrape_scheme]
+          action: replace
+          target_label: __scheme__
+          regex: (https?)
+
+        # Relabel to customize metric path based on pod
+        # "prometheus.opsani.com/path = <metric path>" annotation.
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+
+        # Relabel to scrape only single, desired port for the pod
+        # based on pod "prometheus.opsani.com/port = <port>" annotation.
+        - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_opsani_com_port]
+          action: replace
+          regex: ([^:]+)(?::\d+)?;(\d+)
+          replacement: $1:$2
+          target_label: __address__

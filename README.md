@@ -25,5 +25,23 @@ And finally start some load, there are two load generators (and a load profile f
 kubectl apply -f loadgen2/loadgen2.yaml -n teastore
 ```
 
+**Note that the current "env" update script uses the following model**
 
-
+```yaml
+name: JVM_GC_TIME_RATIO
+value: [0-9]?[0-9]?
+name: JVM_MAX_RAM_PERCENTAGE
+value: [0-9]?[0-9]?
+name: JVM_GC_TYPE
+value:
+ - UseConcMarkSweepGC
+ - UseParNewGC
+ - UseG1GC
+ - UseParallelOldGC
+name: JVM_USE_STRING_DEDUPLICATION
+value: TRUE|FALSE
+name: JVM_ALWAYS_PRE_TOUCH
+value: TRUE|FALSE
+name: JVM_PARALLEL_REF_PROC_ENABLED
+value: TRUE|FALSE
+```

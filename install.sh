@@ -1,7 +1,7 @@
-brew install istioctl
-istioctl install -y
+#brew install istioctl
+#istioctl install -y
 
 kubectl create ns teastore
 #kubectl label namespace teastore istio-injection=enabled --overwrite
-kubectl apply -f iks-teastore.yaml
-kubectl apply -f loadgen/*.yaml
+kubectl kustomize -f envoy | kubectl apply -f -
+kubectl apply -f loadgen2/loadgen2.yaml

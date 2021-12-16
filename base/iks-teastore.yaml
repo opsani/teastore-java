@@ -242,6 +242,7 @@ kind: Deployment
 metadata:
   name: teastore-webui
 spec:
+  replicas: 5
   selector:
     matchLabels:
       app: teastore

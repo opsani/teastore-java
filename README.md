@@ -26,6 +26,7 @@ kubectl apply -f loadgen2/loadgen2.yaml -n teastore
 ```
 
 **Note that the current "env" update script uses the following model**
+**Note 0 == True, 1 == False**
 
 ```yaml
 name: JVM_GC_TIME_RATIO
@@ -39,9 +40,9 @@ value:
  - UseG1GC
  - UseParallelOldGC
 name: JVM_USE_STRING_DEDUPLICATION
-value: TRUE|FALSE
+value: 0|1
 name: JVM_ALWAYS_PRE_TOUCH
-value: TRUE|FALSE
+value: 0|1
 name: JVM_PARALLEL_REF_PROC_ENABLED
-value: TRUE|FALSE
+value: 0|1
 ```
